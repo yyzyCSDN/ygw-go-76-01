@@ -1,6 +1,9 @@
 package rule
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 type ChangeHandler func(gateGroup string, current Rule)
 
@@ -28,6 +31,19 @@ func (n *ChangeNotifier) Subscribe(handler ChangeHandler) func() {
 		delete(n.subs, id)
 		n.mu.Unlock()
 	}
+}
+
+// SubIDs returns the current subscriber IDs, in allocation order. It exists
+// for tests that need to assert subscription lifecycle (subscribe/unsubscribe).
+func (n *ChangeNotifier) SubIDs() []int {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	ids := make([]int, 0, len(n.subs))
+	for id := range n.subs {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	return ids
 }
 
 func (n *ChangeNotifier) Broadcast(gateGroup string, current Rule) {

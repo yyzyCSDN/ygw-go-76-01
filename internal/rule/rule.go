@@ -128,6 +128,7 @@ func (m *RuleManager) Upgrade(gateGroup string, singleAllowed bool, transferAllo
 		TransferAllowed: transferAllowed,
 	}
 	stored := m.store.Set(next)
+	m.notifier.Broadcast(stored.GateGroup, stored)
 	return stored, nil
 }
 
@@ -137,5 +138,6 @@ func (m *RuleManager) UpgradeRule(gateGroup string, next Rule) (Rule, error) {
 	}
 	next.GateGroup = gateGroup
 	stored := m.store.Set(next)
+	m.notifier.Broadcast(stored.GateGroup, stored)
 	return stored, nil
 }

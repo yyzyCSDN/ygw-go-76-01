@@ -222,14 +222,30 @@ func (s *TicketStore) Count() int {
 }
 
 type RuleCache struct {
-	mu      sync.RWMutex
-	entries map[string]rule.Rule
+	mu       sync.RWMutex
+	entries  map[string]rule.Rule
+	unsub    func()
 }
 
 func NewRuleCache(mgr *rule.RuleManager) *RuleCache {
-	return &RuleCache{
+	c := &RuleCache{
 		entries: mgr.Snapshot(),
 	}
+	// Keep the gate-side cache in sync as soon as a rule is upgraded, so a
+	// ticket-type upgrade takes effect at the gate immediately instead of
+	// validating against the stale snapshot captured at startup.
+	c.unsub = mgr.Notifier().Subscribe(func(_ string, current rule.Rule) {
+		c.Update(current)
+	})
+	return c
+}
+
+// Update replaces a single cached rule entry. It is invoked by the rule
+// change notifier right after a rule is upgraded.
+func (c *RuleCache) Update(current rule.Rule) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[current.GateGroup] = current
 }
 
 func (c *RuleCache) Get(gateGroup string) (rule.Rule, bool) {
@@ -239,7 +255,12 @@ func (c *RuleCache) Get(gateGroup string) (rule.Rule, bool) {
 	return item, ok
 }
 
-func (c *RuleCache) Close() {}
+func (c *RuleCache) Close() {
+	if c.unsub != nil {
+		c.unsub()
+		c.unsub = nil
+	}
+}
 
 type Validator struct {
 	store *TicketStore
