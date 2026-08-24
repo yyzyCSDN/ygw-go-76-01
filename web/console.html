@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AFCGateControl 联控台</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:24px;background:#f4f6f8;color:#222}
+h1{font-size:20px}
+.panel{background:#fff;border:1px solid #dfe3e8;border-radius:8px;padding:16px;margin-bottom:16px}
+table{border-collapse:collapse;width:100%}
+th,td{border-bottom:1px solid #eef1f4;padding:8px 10px;text-align:left}
+.ok{color:#1a7f37}.warn{color:#b08800}.bad{color:#cf222e}
+button{padding:6px 14px;border-radius:6px;border:1px solid #c9d1d9;background:#fff;cursor:pointer}
+input{padding:6px 8px;border:1px solid #c9d1d9;border-radius:6px;margin-right:8px}
+</style>
+</head>
+<body>
+<h1>自动售检票闸机联控台</h1>
+<div class="panel">
+<h2>闸机状态</h2>
+<table id="gates"><tr><th>闸机</th><th>状态</th><th>在线</th><th>本次通行</th><th>累计通行</th></tr></table>
+</div>
+<div class="panel">
+<h2>票务校验</h2>
+<input id="ticketNo" placeholder="票号">
+<select id="action"><option value="entry">进站</option><option value="exit">出站</option></select>
+<button onclick="swipe()">刷票</button>
+<span id="swipeResult"></span>
+</div>
+<div class="panel">
+<h2>规则升级</h2>
+<input id="ruleType" placeholder="票种">
+<button onclick="upgrade()">升级为可换乘</button>
+<span id="ruleResult"></span>
+</div>
+<script>
+async function refreshGates(){
+  const res = await fetch('/api/gates');
+  const gates = await res.json();
+  const rows = gates.map(g => {
+    const cls = g.online ? 'ok' : 'bad';
+    return '<tr><td>' + g.id + '</td><td>' + g.state + '</td><td class="' + cls + '">' + (g.online ? '在线' : '离线') + '</td><td>' + g.sessionPassed + '</td><td>' + g.totalPassed + '</td></tr>';
+  }).join('');
+  document.getElementById('gates').innerHTML = '<tr><th>闸机</th><th>状态</th><th>在线</th><th>本次通行</th><th>累计通行</th></tr>' + rows;
+}
+async function swipe(){
+  const body = {ticketNo: document.getElementById('ticketNo').value, action: document.getElementById('action').value};
+  const res = await fetch('/api/swipe', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const data = await res.json();
+  document.getElementById('swipeResult').textContent = data.message || data.error;
+  refreshGates();
+}
+async function upgrade(){
+  const body = {ticketType: document.getElementById('ruleType').value};
+  const res = await fetch('/api/rules/upgrade', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const data = await res.json();
+  document.getElementById('ruleResult').textContent = data.message || data.error;
+}
+refreshGates();
+setInterval(refreshGates, 3000);
+</script>
+</body>
+</html>
