@@ -119,9 +119,11 @@ func (c *Controller) Open(gateID string) error {
 	ctx, cancel := withTimeout(context.Background(), c.openTimeout)
 	defer cancel()
 	if err := sensor.Open(); err != nil {
+		c.recoverToClosed(gateID, "open-actuator-failed")
 		return fmt.Errorf("open actuator failed: %w", err)
 	}
 	if err := waitConfirmation(ctx, sensor, true); err != nil {
+		c.recoverToClosed(gateID, "open-sensor-timeout")
 		return err
 	}
 	if err := c.gates.SetState(gateID, StateOpen, time.Now().Unix()); err != nil {
@@ -141,9 +143,11 @@ func (c *Controller) Close(gateID string) error {
 	ctx, cancel := withTimeout(context.Background(), c.openTimeout)
 	defer cancel()
 	if err := sensor.Close(); err != nil {
+		c.recoverToClosed(gateID, "close-actuator-failed")
 		return fmt.Errorf("close actuator failed: %w", err)
 	}
 	if err := waitConfirmation(ctx, sensor, false); err != nil {
+		c.recoverToClosed(gateID, "close-sensor-timeout")
 		return err
 	}
 	if err := c.gates.SetState(gateID, StateClosed, time.Now().Unix()); err != nil {
@@ -151,6 +155,18 @@ func (c *Controller) Close(gateID string) error {
 	}
 	_ = c.recorder.Record(gateID, "close", "")
 	return nil
+}
+
+// recoverToClosed returns a gate stuck in StateOpening/StateClosing back to
+// StateClosed after a sensor confirmation timeout or actuator failure. The
+// normal state machine cannot move from those transient states straight to
+// StateClosed, so ForceState bypasses the transition table. Without this the
+// gate would remain wedged in its transient state and block all subsequent
+// passages. The fault is recorded so operators can see the recovery.
+func (c *Controller) recoverToClosed(gateID string, reason string) {
+	_ = c.gates.ForceState(gateID, StateClosed, time.Now().Unix())
+	_ = c.gates.RecordFault(gateID, time.Now().Unix())
+	_ = c.recorder.Record(gateID, "recover-closed", reason)
 }
 
 func (c *Controller) State(gateID string) GateState {

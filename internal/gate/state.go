@@ -102,6 +102,23 @@ func (s *GateStore) SetState(id string, state GateState, at int64) error {
 	return nil
 }
 
+// ForceState sets the gate state unconditionally, bypassing the normal
+// transition rules. It is reserved for fault recovery: when a sensor
+// confirmation times out the gate is stuck in StateOpening/StateClosing,
+// which cannot move forward to StateOpen/StateClosed and would block the
+// gate indefinitely. Forcing back to StateClosed makes the gate serviceable
+// again. Normal callers should use SetState.
+func (s *GateStore) ForceState(id string, state GateState, at int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item := s.ensure(id)
+	item.State = state
+	item.UpdatedAt = at
+	s.seq++
+	item.RecordSeq = s.seq
+	return nil
+}
+
 func (s *GateStore) ApplyPoll(id string, online bool, at int64) GateStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()

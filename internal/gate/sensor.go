@@ -37,20 +37,38 @@ func (s *DirectSensor) ConfirmClosed(ctx context.Context) error {
 	return ctx.Err()
 }
 
+// waitConfirmation waits for the sensor to confirm the gate reached the
+// requested position. The sensor call is run in a separate goroutine and
+// the caller's context is observed via a select, so a sensor that ignores
+// its context (e.g. a hardware driver that blocks indefinitely) still
+// returns when the deadline fires. The goroutine is abandoned if it is
+// still running, but the caller never blocks past the timeout.
 func waitConfirmation(ctx context.Context, sensor Sensor, open bool) error {
-	var err error
-	if open {
-		err = sensor.ConfirmOpen(ctx)
-	} else {
-		err = sensor.ConfirmClosed(ctx)
+	type result struct{ err error }
+	done := make(chan result, 1)
+	go func() {
+		var err error
+		if open {
+			err = sensor.ConfirmOpen(ctx)
+		} else {
+			err = sensor.ConfirmClosed(ctx)
+		}
+		done <- result{err}
+	}()
+	select {
+	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled {
+			return ErrSensorTimeout
+		}
+		return ctx.Err()
+	case r := <-done:
+		switch r.err {
+		case context.DeadlineExceeded, context.Canceled:
+			return ErrSensorTimeout
+		default:
+			return r.err
+		}
 	}
-	if err == context.DeadlineExceeded {
-		return ErrSensorTimeout
-	}
-	if err == context.Canceled {
-		return ErrSensorTimeout
-	}
-	return err
 }
 
 func withTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
