@@ -134,8 +134,20 @@ func (r *Recovery) Restore() (SessionSnapshot, error) {
 	if len(sessions) == 0 {
 		return SessionSnapshot{}, nil
 	}
+	// Recover from the newest session snapshot. The ledger appends snapshots
+	// in save order, so picking sessions[0] restores the oldest cumulative
+	// counts and leaves the totals lagging behind actual gate passage after a
+	// restart. Select by Seq to always restore the latest state regardless of
+	// slice ordering.
 	latest := sessions[0]
+	for _, snap := range sessions[1:] {
+		if snap.Seq > latest.Seq {
+			latest = snap
+		}
+	}
 	r.counter.Restore(latest.Counts)
+	r.lastRestoredID = latest.ID
+	r.lastRestoredSeq = latest.Seq
 	return latest, nil
 }
 
